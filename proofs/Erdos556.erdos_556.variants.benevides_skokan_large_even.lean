@@ -286,5 +286,162 @@ theorem even_cycle_ramsey_lower (n : ℕ) (hn : 4 ≤ n) (he : Even n) :
 
 end Erdos556Construction
 
+namespace Erdos556Construction
+open SimpleGraph
+
+-- A balanced bipartite pair of minimum degree at least three quarters of its
+-- part size supplies a cycle of the exact length needed in dense extremal cases.
+theorem half_degree_matching {k : ℕ} (T : Fin k → Finset (Fin k))
+    (row : ∀ i, k ≤ 2 * (T i).card)
+    (col : ∀ j, k ≤ 2 * (Finset.univ.filter (fun i => j ∈ T i)).card) :
+    ∃ f, Function.Injective f ∧ ∀ i, f i ∈ T i := by
+  classical
+  apply (Finset.all_card_le_biUnion_card_iff_exists_injective T).mp
+  intro S
+  by_contra! bad
+  obtain ⟨i, hi⟩ := Finset.card_pos.mp (by omega : 0 < S.card)
+  have r := row i
+  have hsub : T i ⊆ S.biUnion T := fun j hj => Finset.mem_biUnion.mpr ⟨i, hi, hj⟩
+  have hr := Finset.card_le_card hsub
+  have hs : S.card ≤ k := by simpa using Finset.card_le_univ S
+  obtain ⟨j, hj⟩ : ((S.biUnion T)ᶜ).Nonempty := by
+    apply Finset.card_pos.mp
+    rw [Finset.card_compl, Fintype.card_fin]
+    omega
+  have hcol : Finset.univ.filter (fun a => j ∈ T a) ⊆ Sᶜ := by
+    intro a ha
+    apply Finset.mem_compl.mpr
+    intro h
+    exact (Finset.mem_compl.mp hj) (Finset.mem_biUnion.mpr ⟨a,h,(Finset.mem_filter.mp ha).2⟩)
+  have hc := Finset.card_le_card hcol
+  rw [Finset.card_compl, Fintype.card_fin] at hc
+  have := col j
+  omega
+
+theorem half_intersection {k : ℕ} (A B : Finset (Fin k))
+    (ha : 3*k ≤ 4*A.card) (hb : 3*k ≤ 4*B.card) :
+    k ≤ 2*(A ∩ B).card := by
+  have hu : (A ∪ B).card ≤ k := by simpa using Finset.card_le_univ (A ∪ B)
+  have := Finset.card_union_add_card_inter A B
+  omega
+
+theorem dense_pair_successors (k : ℕ) [NeZero k] (T : Fin k → Finset (Fin k))
+    (row : ∀ i, 3*k ≤ 4*(T i).card)
+    (col : ∀ j, 3*k ≤ 4*(Finset.univ.filter (fun i => j ∈ T i)).card) :
+    ∃ f, Function.Injective f ∧ ∀ i, f i ∈ T i ∧ f i ∈ T (i+1) := by
+  classical
+  let U (i : Fin k) := T i ∩ T (i+1)
+  obtain ⟨f, hf, hmem⟩ := half_degree_matching U
+    (fun i => half_intersection _ _ (row i) (row (i+1))) (by
+      intro j
+      let A := Finset.univ.filter (fun i => j ∈ T i)
+      let B := Finset.univ.filter (fun i => j ∈ T (i+1))
+      have eq : B = A.image (fun a : Fin k => a-1) := by
+        ext i
+        constructor
+        · intro hi
+          exact Finset.mem_image.mpr ⟨i+1, (Finset.mem_filter.mpr ⟨Finset.mem_univ _, (Finset.mem_filter.mp hi).2⟩), by simp⟩
+        · intro hi
+          obtain ⟨a, ha, rfl⟩ := Finset.mem_image.mp hi
+          exact Finset.mem_filter.mpr ⟨Finset.mem_univ _, by simpa using (Finset.mem_filter.mp ha).2⟩
+      have hB : B.card = A.card := by rw [eq, Finset.card_image_of_injective _ (fun a b h => by simpa using congrArg (fun x : Fin k => x+1) h)]
+      have hU : Finset.univ.filter (fun i => j ∈ U i) = A ∩ B := by ext i; simp [A,B,U]
+      rw [hU]
+      exact half_intersection _ _ (col j) (by rw [hB]; exact col j))
+  exact ⟨f, hf, fun i => Finset.mem_inter.mp (hmem i)⟩
+
+theorem dense_pair_cycle {V : Type*} (G : SimpleGraph V) (m : ℕ)
+    (L R : Fin (m+1) ↪ V) (apart : ∀ i j, L i ≠ R j)
+    (T : Fin (m+1) → Finset (Fin (m+1)))
+    (adj : ∀ i j, j ∈ T i → G.Adj (L i) (R j))
+    (row : ∀ i, 3*(m+1) ≤ 4*(T i).card)
+    (col : ∀ j, 3*(m+1) ≤ 4*(Finset.univ.filter (fun i => j ∈ T i)).card) :
+    (cycleGraph (2*m+2)).IsContained G := by
+  obtain ⟨f, hf, hmem⟩ := dense_pair_successors _ T row col
+  let idx (i : Fin (2*m+2)) : Fin (m+1) := ⟨i.val / 2, by have := i.isLt; omega⟩
+  let v (i : Fin (2*m+2)) := if i.val % 2 = 0 then L (idx i) else R (f (idx i))
+  have inj : Function.Injective v := by
+    intro i j hij
+    dsimp only [v] at hij
+    split_ifs at hij with hi hj hj
+    · have := congrArg Fin.val (L.injective hij)
+      apply Fin.ext
+      dsimp [idx] at this
+      omega
+    · exact (apart _ _ hij).elim
+    · exact (apart _ _ hij.symm).elim
+    · have := congrArg Fin.val (hf (R.injective hij))
+      apply Fin.ext
+      dsimp [idx] at this
+      omega
+  have step (i : Fin (2*m+2)) : G.Adj (v i) (v (i+1)) := by
+    have hi := i.isLt
+    by_cases h : i.val+1 < 2*m+2
+    · have hv : (i+1).val = i.val+1 := by simp [Fin.val_add, Nat.mod_eq_of_lt h]
+      by_cases he : i.val % 2 = 0
+      · have he' : (i+1).val % 2 ≠ 0 := by rw [hv]; omega
+        have heq : idx (i+1) = idx i := Fin.ext (by dsimp [idx]; rw [hv]; omega)
+        simpa [v, he, he', heq] using adj (idx i) _ (hmem (idx i)).1
+      · have he' : (i+1).val % 2 = 0 := by rw [hv]; omega
+        have hb : (idx i).val+1 < m+1 := by dsimp [idx]; omega
+        have heq : idx (i+1) = idx i+1 := Fin.ext (by simp [idx, hv, Fin.val_add, Nat.mod_eq_of_lt hb]; omega)
+        simpa [v, he, he', heq] using (adj (idx i+1) _ (hmem (idx i)).2).symm
+    · have last : i.val+1 = 2*m+2 := by omega
+      have hv : (i+1).val = 0 := by simp [Fin.val_add, last]
+      have he : i.val % 2 ≠ 0 := by omega
+      have hl : (idx i).val+1 = m+1 := by dsimp [idx]; omega
+      have heq : idx (i+1) = idx i+1 := Fin.ext (by simp [idx, hv, Fin.val_add, show i.val / 2 + 1 = m+1 from hl])
+      simpa [v, he, hv, heq] using (adj (idx i+1) _ (hmem (idx i)).2).symm
+  refine ⟨⟨⟨v, ?_⟩, inj⟩⟩
+  intro a b hab
+  rcases cycleGraph_adj.mp hab with h | h
+  · have e : a = b+1 := by simpa [add_comm] using sub_eq_iff_eq_add.mp h
+    rw [e]
+    exact (step b).symm
+  · have e : b = a+1 := by simpa [add_comm] using sub_eq_iff_eq_add.mp h
+    rw [e]
+    exact step a
+
+-- Choose the length first. Restricting to k vertices on each side loses
+-- neighbors, but it cannot increase the absolute number of missing neighbors.
+theorem restrict_missing_neighbors {k M : ℕ} (e : Fin k ↪ Fin M)
+    (T : Finset (Fin M)) (d : ℕ) (h : (Tᶜ).card ≤ d) :
+    k ≤ (Finset.univ.filter (fun i => e i ∈ T)).card + d := by
+  classical
+  let A := Finset.univ.filter (fun i => e i ∈ T)
+  have hs : ((Aᶜ).image e) ⊆ Tᶜ := by
+    intro j hj
+    obtain ⟨i, hi, rfl⟩ := Finset.mem_image.mp hj
+    simpa [A] using hi
+  have hc := Finset.card_le_card hs
+  rw [Finset.card_image_of_injective _ e.injective, Finset.card_compl, Fintype.card_fin] at hc
+  change k ≤ A.card + d
+  omega
+
+theorem prescribed_cycle_of_few_missing {V : Type*} (G : SimpleGraph V) (m M d : ℕ)
+    (size : m+1 ≤ M) (loss : 4*d ≤ m+1)
+    (L R : Fin M ↪ V) (apart : ∀ i j, L i ≠ R j)
+    (T : Fin M → Finset (Fin M))
+    (adj : ∀ i j, j ∈ T i → G.Adj (L i) (R j))
+    (row : ∀ i, ((T i)ᶜ).card ≤ d)
+    (col : ∀ j, ((Finset.univ.filter (fun i => j ∈ T i))ᶜ).card ≤ d) :
+    (cycleGraph (2*m+2)).IsContained G := by
+  classical
+  let e : Fin (m+1) ↪ Fin M := ⟨Fin.castLE size, fun a b h => Fin.ext (congrArg (fun x : Fin M => x.val) h)⟩
+  let U (i : Fin (m+1)) := Finset.univ.filter (fun j => e j ∈ T (e i))
+  apply dense_pair_cycle G m (e.trans L) (e.trans R) (fun i j => apart _ _) U
+  · intro i j hj
+    exact adj _ _ (Finset.mem_filter.mp hj).2
+  · intro i
+    have h := restrict_missing_neighbors e (T (e i)) d (row (e i))
+    change 3*(m+1) ≤ 4*(Finset.univ.filter (fun j => e j ∈ T (e i))).card
+    omega
+  · intro j
+    have h := restrict_missing_neighbors e _ d (col (e j))
+    simp [U] at h ⊢
+    omega
+
+end Erdos556Construction
+
 theorem OMA.solution : type_of% @Erdos556.erdos_556.variants.benevides_skokan_large_even := by
   sorry
